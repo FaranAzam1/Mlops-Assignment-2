@@ -155,3 +155,18 @@ def test_trace_file_records_reasoning_and_tool_calls(tools, tmp_path):
 def test_observation_summarises_repository(tools):
     obs = AuditAgent(ScriptedLLM([]), tools, "https://github.com/o/r").observe()
     assert "Tracked files: 3" in obs and ".github/workflows/ci.yml" in obs and "README.md" in obs
+
+
+def test_observation_reports_presence_and_absence_of_common_files(tools):
+    obs = AuditAgent(ScriptedLLM([]), tools, "u").observe()
+    assert "README: README.md" in obs and "CI config: .github/workflows/ci.yml" in obs
+    assert "tests: none found" in obs and "lockfiles: none found" in obs and ".gitignore: none found" in obs
+
+
+def test_backoff_time_does_not_consume_the_investigation_deadline(tools):
+    llm = ScriptedLLM([[call("finish", summary="s")]])
+    llm.waited_seconds = 10_000.0  # simulated long rate-limit waits
+    agent = AuditAgent(llm, tools, "u", deadline_seconds=1, log=lambda m: None)
+    agent.deadline -= 5  # real elapsed time exceeds the budget...
+    agent.run()
+    assert agent.stop_reason != "wall-clock time limit reached"  # ...but waits are subtracted, so no forced finish

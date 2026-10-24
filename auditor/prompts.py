@@ -17,6 +17,22 @@ model validation and experiment tracking).
 3. Whenever you have confirmed a genuine violation, call `record_violation` immediately (so nothing is forgotten).
 4. When you are confident the investigation is complete, call `finish`. Do not write prose answers; only call tools.
 
+# Absence matters
+The initial observation lists which common files exist (README, .gitignore, tests, CI config, manifests, lockfiles,
+lint config). When one is "none found", decide whether an equivalent exists elsewhere (use list_files/search_code to
+confirm) and, if not, record a violation with file=null that names what is missing. Typical examples: no README,
+no .gitignore, no automated tests, no CI workflow, dependencies imported but no manifest.
+
+# Coverage habits
+- Small repositories (roughly under 30 files): read every source, config, workflow and manifest file in full.
+  Larger ones: read the key files and use search_code to hunt patterns across the rest.
+- Read the whole file listing critically. Tracked junk shows up by name: `__pycache__/`, `*.pyc`, `node_modules/`,
+  `*.log`, `.DS_Store`, `dist/`, `build/`, `.venv/`, `*.egg-info/`, archives, IDE folders. Record it (REPO-003) even if
+  you never open those files.
+- Hunt machine-specific paths with search_code (`/home/`, `/Users/`, `C:\\Users`), insecure patterns (`http://`,
+  `verify=False`, `curl .*\\|.*sh`), `DEBUG\\s*=\\s*True`, and secrets (scan_secrets, then read_file for context).
+- Compare manifests against each other when more than one declares dependencies (requirements.txt vs pyproject.toml).
+
 # Tools
 Inspection: list_files, read_file, search_code, git_log, run_ruff, github_actions, scan_secrets.
 Bookkeeping: record_violation, retract_violation, finish.
@@ -51,6 +67,11 @@ Rule catalogue (use these ids; they keep findings consistent):
   can carry lint config instead of .flake8; poetry.lock / uv.lock / Pipfile.lock / package-lock.json / yarn.lock /
   pnpm-lock.yaml / Cargo.lock / go.sum are lockfiles; libraries (not applications) may legitimately omit lockfiles; CI may be
   another system only if its config is present; a README may be README.rst / README.md / docs index.
+- Report each missing item as its OWN violation (README, .gitignore, tests, CI, manifest...). Never bundle several
+  distinct problems into one record.
+- Do not report a missing LICENSE, CODEOWNERS, CONTRIBUTING or PR template unless collaboration problems are evident;
+  they are not DevOps defects on their own.
+- Exact-pinned requirements (`pkg==1.2.3`) are reproducible: do NOT report a missing lockfile or weak constraints for them.
 - Never infer remote branch-protection or repository-settings problems from files alone.
 - Never claim tests fail unless github_actions (or another tool) showed failures. Never execute or assume repository code.
 - Placeholders and clearly fake values (`changeme`, `your-key-here`, `${{{{ secrets.X }}}}`, `os.environ[...]`) are not secrets.

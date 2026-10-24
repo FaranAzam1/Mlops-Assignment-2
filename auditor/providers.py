@@ -15,13 +15,18 @@ PROVIDERS: dict[str, dict[str, Optional[str]]] = {
         "base_env": "OPENAI_BASE_URL",
         "default_model": "gpt-4.1",
         "default_base": None,
+        "fallback_env": "OPENAI_FALLBACK_MODELS",
+        "default_fallbacks": "",
     },
     "gemini": {
         "key_env": "GEMINI_API_KEY",
         "model_env": "GEMINI_MODEL",
         "base_env": "GEMINI_BASE_URL",
-        "default_model": "gemini-2.5-flash",
+        "default_model": "gemini-3.5-flash",
         "default_base": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        # Free-tier quotas are per model (about 20 requests/day), so spare models extend a day's budget.
+        "fallback_env": "GEMINI_FALLBACK_MODELS",
+        "default_fallbacks": "gemini-3.6-flash,gemini-3.7-flash,gemini-3.8-flash,gemini-3.1-flash-lite,gemini-3.5-flash-lite",
     },
 }
 CHOICES = ("auto", *PROVIDERS)
@@ -33,6 +38,7 @@ class ProviderConfig:
     api_key: str
     model: str
     base_url: Optional[str]
+    fallback_models: tuple[str, ...] = ()
 
 
 def _get(env: Mapping[str, str], name: Optional[str]) -> str:
@@ -66,9 +72,14 @@ def resolve_provider(requested: Optional[str] = None, model: Optional[str] = Non
             "or pick another provider with --provider / LLM_PROVIDER.",
             EXIT_BAD_INPUT,
         )
+    chosen = model or _get(env, spec["model_env"]) or str(spec["default_model"])
+    fallback_raw = env.get(str(spec["fallback_env"]))
+    fallback_raw = str(spec["default_fallbacks"]) if fallback_raw is None else fallback_raw
+    fallbacks = tuple(dict.fromkeys(m.strip() for m in fallback_raw.split(",") if m.strip() and m.strip() != chosen))
     return ProviderConfig(
         name=choice,
         api_key=api_key,
-        model=model or _get(env, spec["model_env"]) or str(spec["default_model"]),
+        model=chosen,
         base_url=_get(env, spec["base_env"]) or spec["default_base"],
+        fallback_models=fallbacks,
     )

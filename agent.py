@@ -75,15 +75,15 @@ def main(
             raise AuditError("--max-steps must be >= 3, --timeout >= 10 and --clone-depth >= 1", EXIT_BAD_INPUT)
         ref: RepoRef = parse_repo_url(args.repo, allow_local=args.allow_local_repo)
 
+        log = (lambda _msg: None) if args.quiet else (lambda msg: print(msg, file=sys.stderr))
         if llm_factory is not None:
             model, provider = args.model or "scripted", args.provider or "test"
             llm = llm_factory(model)
         else:
             cfg = resolve_provider(args.provider, args.model)
             model, provider = cfg.model, cfg.name
-            llm = OpenAIClient(api_key=cfg.api_key, model=cfg.model, base_url=cfg.base_url)
+            llm = OpenAIClient(api_key=cfg.api_key, model=cfg.model, base_url=cfg.base_url, fallback_models=cfg.fallback_models, log=log)
 
-        log = (lambda _msg: None) if args.quiet else (lambda msg: print(msg, file=sys.stderr))
         output = Path(args.output)
         trace_path = None if args.no_trace else Path(args.trace) if args.trace else output.with_name(output.stem + ".trace.jsonl")
         trace = TraceWriter(trace_path)

@@ -8,6 +8,7 @@ calls, executes them, feeds redacted results back and keeps the findings ledger.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import time
 from collections import Counter
@@ -97,6 +98,29 @@ ALL_SCHEMAS = [_with_reasoning(s) for s in (*TOOL_SCHEMAS, *BOOKKEEPING_SCHEMAS)
 FINISH_CHOICE = {"type": "function", "function": {"name": "finish"}}
 
 
+_PRESENCE_PATTERNS: list[tuple[str, str]] = [
+    ("README", r"(?i)(^|/)readme(\.[a-z]+)?$"),
+    (".gitignore", r"(^|/)\.gitignore$"),
+    ("tests", r"(?i)(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]*\.py$|_test\.(py|go)$|\.(test|spec)\.[jt]sx?$"),
+    ("CI config", r"^\.github/workflows/[^/]+\.ya?ml$|(^|/)\.gitlab-ci\.yml$|(^|/)Jenkinsfile$|^\.circleci/|(^|/)azure-pipelines\.ya?ml$"),
+    ("dependency manifests", r"(?i)(^|/)(requirements[^/]*\.txt|pyproject\.toml|setup\.py|setup\.cfg|Pipfile|package\.json|go\.mod|Cargo\.toml|pom\.xml|build\.gradle(\.kts)?|Gemfile|composer\.json)$"),
+    ("lockfiles", r"(?i)(^|/)(poetry\.lock|uv\.lock|Pipfile\.lock|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|go\.sum|Gemfile\.lock|composer\.lock)$"),
+    ("lint/format config", r"(?i)(^|/)(\.flake8|ruff\.toml|\.ruff\.toml|tox\.ini|\.pylintrc|\.eslintrc[^/]*|eslint\.config\.[a-z]+|\.prettierrc[^/]*|\.pre-commit-config\.ya?ml|\.editorconfig)$"),
+    ("Dockerfile", r"(?i)(^|/)(Dockerfile[^/]*|docker-compose[^/]*\.ya?ml)$"),
+    ("env example", r"(?i)(^|/)\.env\.(example|sample|template)$"),
+]
+
+
+def presence_summary(files: list[str]) -> str:
+    """Name-based facts about common project files (pyproject.toml/setup.cfg may also hold lint settings: read them)."""
+    parts = []
+    for label, pattern in _PRESENCE_PATTERNS:
+        found = [f for f in files if re.search(pattern, f)]
+        shown = ", ".join(found[:4]) + (f" (+{len(found) - 4} more)" if len(found) > 4 else "")
+        parts.append(f"{label}: {shown or 'none found'}")
+    return "; ".join(parts)
+
+
 class TraceWriter:
     """Append-only JSONL trace of every observation, tool call and result (all text redacted)."""
 
@@ -176,6 +200,7 @@ class AuditAgent:
             "Top-level files: " + (", ".join(sorted(top_files)[:60]) or "(none)"),
             "Most common file types: " + ", ".join(f"{e} x{n}" for e, n in ext.most_common(10)),
             "GitHub Actions workflow files: " + (", ".join(workflows) if workflows else "(none found under .github/workflows/)"),
+            "Common files present (name-based facts, not findings; judge whether anything is missing): " + presence_summary(files),
             "Latest commit: " + self.tools.git_log(max_count=1).replace("\n", " | "),
         ]
         return "\n".join(lines)
@@ -190,7 +215,7 @@ class AuditAgent:
             {"role": "user", "content": f"{OBSERVATION_INTRO}\n\n{observation}"},
         ]
         for step in range(1, self.max_steps + 1):
-            if time.monotonic() > self.deadline:
+            if time.monotonic() - float(getattr(self.llm, "waited_seconds", 0.0)) > self.deadline:
                 self._force_finish, self.stop_reason = True, "wall-clock time limit reached"
             elif step == self.max_steps:
                 self._force_finish, self.stop_reason = True, "step limit reached"

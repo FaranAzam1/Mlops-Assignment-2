@@ -43,7 +43,7 @@ Edit `.env` and set your key:
 | `OPENAI_MODEL` | no | OpenAI model (default `gpt-4.1`) |
 | `OPENAI_BASE_URL` | no | Custom OpenAI-compatible endpoint |
 | `GEMINI_API_KEY` | for Gemini | Google AI Studio key (free tier available: <https://aistudio.google.com/apikey>) |
-| `GEMINI_MODEL` | no | Gemini model (default `gemini-2.5-flash`) |
+| `GEMINI_MODEL` | no | Gemini model (default `gemini-3.5-flash`) |
 | `GEMINI_BASE_URL` | no | Defaults to Gemini's OpenAI-compatible endpoint |
 | `GITHUB_TOKEN` | no | Only raises the GitHub API rate limit for the `github_actions` tool (public data; no scopes needed) |
 
