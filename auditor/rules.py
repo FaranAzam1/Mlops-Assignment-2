@@ -38,7 +38,7 @@ RULES: dict[str, tuple[str, str]] = {
     "REPO-002": ("medium", ".gitignore missing or unsuitable for the project's languages/tooling"),
     "REPO-003": ("medium", "Generated/temporary files tracked (pyc, __pycache__, node_modules, build output, logs, .DS_Store, virtualenvs)"),
     "DEP-001": ("high", "Code imports third-party packages but no dependency manifest exists"),
-    "DEP-002": ("medium", "Dependency specifications are inconsistent across manifests (conflicting versions/packages)"),
+    "DEP-002": ("medium", "Manifests CONFLICT: the same package has incompatible versions/constraints in two manifests (one manifest simply not listing deps is NOT a conflict)"),
     "DEP-003": ("medium", "Application has loose/unpinned dependencies AND no lockfile (exact == pins or a lockfile each satisfy this; then do NOT report it)"),
     "DEP-004": ("medium", "Weak version constraints (`*`, `latest`, unbounded or unpinned critical deps)"),
     "DEP-005": ("high", "Dependency fetched from an unsafe/unpinned source (plain http index, unpinned git branch)"),

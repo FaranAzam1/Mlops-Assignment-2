@@ -35,6 +35,7 @@ def inspect_steps(n=4):
 
 
 def run(tools, steps, **kw):
+    kw.setdefault("review_gate", False)
     llm = ScriptedLLM(steps)
     agent = AuditAgent(llm, tools, "https://github.com/o/r", log=lambda m: None, **kw)
     return agent, llm, agent.run()
@@ -170,3 +171,27 @@ def test_backoff_time_does_not_consume_the_investigation_deadline(tools):
     agent.deadline -= 5  # real elapsed time exceeds the budget...
     agent.run()
     assert agent.stop_reason != "wall-clock time limit reached"  # ...but waits are subtracted, so no forced finish
+
+
+def test_review_gate_lists_unopened_files_once_then_allows_finish(tools):
+    steps = [*inspect_steps(), [call("finish", summary="first")], [call("read_file", path="README.md")], [call("finish", summary="second")]]
+    agent, llm, _ = run(tools, steps, review_gate=True)
+    results = ScriptedLLM.tool_results(llm.requests[-1]["messages"])
+    review = next(r for r in results if r.startswith("REVIEW BEFORE FINISHING"))
+    assert "README.md" in review and ".github/workflows/ci.yml" in review and "app.py" not in review
+    assert agent.finished
+
+
+def test_review_gate_is_one_time_and_skipped_when_everything_was_read(tools):
+    steps = [*inspect_steps(), [call("finish", summary="a")], [call("finish", summary="b")]]
+    agent, llm, _ = run(tools, steps, review_gate=True)
+    assert agent.finished and sum(r.startswith("REVIEW") for r in ScriptedLLM.tool_results(llm.requests[-1]["messages"])) == 1
+    reads = [[call("read_file", path=p)] for p in ("README.md", "app.py", ".github/workflows/ci.yml")]
+    agent, llm, _ = run(tools, [*reads, [call("list_files")], [call("finish", summary="done")]], review_gate=True)
+    assert agent.finished and not any(r.startswith("REVIEW") for r in ScriptedLLM.tool_results(llm.requests[-1]["messages"]))
+
+
+def test_review_gate_skips_large_repositories(tools):
+    steps = [*inspect_steps(), [call("finish", summary="done")]]
+    agent, _, _ = run(tools, steps, review_gate=True, review_max_files=2)
+    assert agent.finished

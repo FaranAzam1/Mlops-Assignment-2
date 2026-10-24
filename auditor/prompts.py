@@ -71,6 +71,8 @@ Rule catalogue (use these ids; they keep findings consistent):
   distinct problems into one record.
 - Do not report a missing LICENSE, CODEOWNERS, CONTRIBUTING or PR template unless collaboration problems are evident;
   they are not DevOps defects on their own.
+- Manifests are inconsistent only when they actually conflict (same package, incompatible versions). A pyproject.toml
+  that holds only metadata/tool config next to a requirements.txt is a normal setup, not a violation.
 - Exact-pinned requirements (`pkg==1.2.3`) are reproducible: do NOT report a missing lockfile or weak constraints for them.
 - Never infer remote branch-protection or repository-settings problems from files alone.
 - Never claim tests fail unless github_actions (or another tool) showed failures. Never execute or assume repository code.

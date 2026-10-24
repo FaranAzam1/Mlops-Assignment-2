@@ -121,6 +121,17 @@ def presence_summary(files: list[str]) -> str:
     return "; ".join(parts)
 
 
+_SKIP_SUFFIXES = (".lock", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg", ".pdf", ".zip", ".gz", ".pyc", ".bin", ".woff", ".woff2", ".ttf", ".mp4", ".mp3")
+_SKIP_NAMES = {"package-lock.json", "go.sum", "license", "licence", "copying", "__init__.py"}
+
+
+def _norm_path(path: str) -> str:
+    path = path.replace("\\", "/").strip()
+    while path.startswith("./"):
+        path = path[2:]
+    return path.lstrip("/")
+
+
 class TraceWriter:
     """Append-only JSONL trace of every observation, tool call and result (all text redacted)."""
 
@@ -159,6 +170,8 @@ class AuditAgent:
         min_tool_calls: int = 4,
         deadline_seconds: float = 900.0,
         log: Optional[Callable[[str], None]] = None,
+        review_gate: bool = True,
+        review_max_files: int = 40,
     ) -> None:
         self.llm = llm
         self.tools = tools
@@ -176,6 +189,10 @@ class AuditAgent:
         self.stop_reason = ""
         self.token_usage: Counter = Counter()
         self._force_finish = False
+        self.review_gate = review_gate
+        self.review_max_files = review_max_files
+        self._review_done = False
+        self._read_paths: set[str] = set()
 
     # ---------------------------------------------------------------- observe
     @property
@@ -268,6 +285,8 @@ class AuditAgent:
 
         if name in TOOL_FUNCTIONS:
             self.inspection_calls += 1
+            if name == "read_file" and isinstance(args.get("path"), str):
+                self._read_paths.add(_norm_path(args["path"]))
             output = self.tools.execute(name, args)
             result = self._clip(output)
             phase = "tool_call"
@@ -315,9 +334,38 @@ class AuditAgent:
                 f"REJECTED: only {self.inspection_calls} inspection call(s) made. Investigate the repository properly "
                 f"(workflows, manifests, secrets, tracked files, configuration) before finishing."
             )
+        if self.review_gate and not self._review_done and not self._force_finish:
+            self._review_done = True
+            unread = self._unread_files()
+            if unread:
+                shown = ", ".join(unread[:15]) + (f" (+{len(unread) - 15} more)" if len(unread) > 15 else "")
+                return (
+                    "REVIEW BEFORE FINISHING (one-time): these tracked files were never opened: "
+                    f"{shown}. Open any that could hide defects (source, configuration, workflows, build files, manifests): "
+                    "machine-specific paths, hardcoded secrets, unsafe code, wrong settings. Record anything new, "
+                    "then call finish again; the next finish call will end the investigation."
+                )
         self.finished = True
         self.summary = str(args.get("summary", ""))[:500]
         return f"Inspection finished with {len(self.violations)} recorded violation(s)."
+
+    def _unread_files(self) -> list[str]:
+        """Small repositories only: non-empty text-like tracked files the agent never opened with read_file."""
+        files = self.tools.tracked_files()
+        if len(files) > self.review_max_files:
+            return []
+        unread = []
+        for rel in files:
+            low = rel.lower()
+            if rel in self._read_paths or low.endswith(_SKIP_SUFFIXES) or low.rsplit("/", 1)[-1] in _SKIP_NAMES:
+                continue
+            try:
+                if (self.tools.root / rel).stat().st_size == 0:
+                    continue
+            except OSError:
+                continue
+            unread.append(rel)
+        return unread
 
     # ------------------------------------------------------------- compaction
     def _maybe_compact(self) -> None:
