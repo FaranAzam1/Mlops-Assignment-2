@@ -16,6 +16,7 @@ from typing import Callable, Optional, Sequence
 
 from auditor.llm import LLMClient, OpenAIClient
 from auditor.loop import AuditAgent, TraceWriter
+from auditor.providers import CHOICES, resolve_provider
 from auditor.repo import (
     EXIT_BAD_INPUT,
     AuditError,
@@ -28,8 +29,6 @@ from auditor.repo import (
 from auditor.report import write_report
 from tools import RepoTools
 
-DEFAULT_MODEL = "gpt-4.1"
-
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -38,7 +37,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--repo", required=True, help="Public GitHub repository URL, e.g. https://github.com/owner/name")
     p.add_argument("--output", default="report.json", help="Path of the JSON report to write (default: report.json)")
-    p.add_argument("--model", default=None, help=f"LLM model (default: $OPENAI_MODEL or {DEFAULT_MODEL})")
+    p.add_argument("--provider", choices=CHOICES, default=None,
+                   help="LLM provider (default: $LLM_PROVIDER, else auto = the provider whose API key is set)")
+    p.add_argument("--model", default=None, help="LLM model (default: $OPENAI_MODEL / $GEMINI_MODEL, else the provider's default)")
     p.add_argument("--max-steps", type=int, default=40, help="Maximum LLM turns (default: 40)")
     p.add_argument("--timeout", type=int, default=900, help="Wall-clock budget in seconds for the investigation (default: 900)")
     p.add_argument("--clone-depth", type=int, default=200, help="Git history depth to fetch (default: 200)")
@@ -74,17 +75,13 @@ def main(
             raise AuditError("--max-steps must be >= 3, --timeout >= 10 and --clone-depth >= 1", EXIT_BAD_INPUT)
         ref: RepoRef = parse_repo_url(args.repo, allow_local=args.allow_local_repo)
 
-        model = args.model or os.environ.get("OPENAI_MODEL") or DEFAULT_MODEL
         if llm_factory is not None:
+            model, provider = args.model or "scripted", args.provider or "test"
             llm = llm_factory(model)
         else:
-            api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-            if not api_key:
-                raise AuditError(
-                    "OPENAI_API_KEY is not set. Copy .env.example to .env and add your key, or export it in the environment.",
-                    EXIT_BAD_INPUT,
-                )
-            llm = OpenAIClient(api_key=api_key, model=model, base_url=os.environ.get("OPENAI_BASE_URL"))
+            cfg = resolve_provider(args.provider, args.model)
+            model, provider = cfg.model, cfg.name
+            llm = OpenAIClient(api_key=cfg.api_key, model=cfg.model, base_url=cfg.base_url)
 
         log = (lambda _msg: None) if args.quiet else (lambda msg: print(msg, file=sys.stderr))
         output = Path(args.output)
@@ -96,7 +93,8 @@ def main(
         checkout = clone_fn(ref, workdir, depth=args.clone_depth)
 
         tools = RepoTools(checkout, slug=ref.slug, github_token=os.environ.get("GITHUB_TOKEN") or None)
-        trace.event(phase="start", repository=ref.url, model=model, max_steps=args.max_steps)
+        log(f"[llm] provider={provider} model={model}")
+        trace.event(phase="start", repository=ref.url, provider=provider, model=model, max_steps=args.max_steps)
         agent = AuditAgent(
             llm, tools, ref.url, trace=trace, max_steps=args.max_steps,
             deadline_seconds=args.timeout, log=log,

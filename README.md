@@ -38,12 +38,23 @@ Edit `.env` and set your key:
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `OPENAI_API_KEY` | yes | API key for the LLM |
-| `OPENAI_MODEL` | no | Chat model supporting tool calling (default `gpt-4.1`; also `--model`) |
-| `OPENAI_BASE_URL` | no | OpenAI-compatible endpoint |
+| `LLM_PROVIDER` | no | `openai`, `gemini` or `auto` (default). `auto` uses whichever key is set (OpenAI if both). Also `--provider` |
+| `OPENAI_API_KEY` | for OpenAI | OpenAI key |
+| `OPENAI_MODEL` | no | OpenAI model (default `gpt-4.1`) |
+| `OPENAI_BASE_URL` | no | Custom OpenAI-compatible endpoint |
+| `GEMINI_API_KEY` | for Gemini | Google AI Studio key (free tier available: <https://aistudio.google.com/apikey>) |
+| `GEMINI_MODEL` | no | Gemini model (default `gemini-2.5-flash`) |
+| `GEMINI_BASE_URL` | no | Defaults to Gemini's OpenAI-compatible endpoint |
 | `GITHUB_TOKEN` | no | Only raises the GitHub API rate limit for the `github_actions` tool (public data; no scopes needed) |
 
-Variables already present in the environment take precedence over `.env`.
+Variables already present in the environment take precedence over `.env`. `--model` overrides the model for either provider.
+
+**Providers.** Both are reached through the OpenAI chat-completions API with tool calling (Gemini via its
+OpenAI-compatible endpoint), so the agent code is identical; only key, model and endpoint differ. Any other
+OpenAI-compatible service can be used through `OPENAI_BASE_URL` / `OPENAI_MODEL`.
+
+Free tiers rate-limit aggressively; the client backs off and retries rate-limit errors (up to 6 attempts) but fails fast
+when a quota/credit is exhausted.
 
 ## 3. Running
 
@@ -58,13 +69,14 @@ It runs unattended (no prompts). On success it exits `0` and writes valid JSON, 
 |---|---|---|
 | `--repo URL` | required | Public `https://github.com/<owner>/<repo>` (a `/tree/<branch>` suffix selects a branch) |
 | `--output PATH` | `report.json` | Report path (parent directories are created) |
-| `--model NAME` | `$OPENAI_MODEL` or `gpt-4.1` | LLM model |
+| `--provider NAME` | `$LLM_PROVIDER` or `auto` | `openai`, `gemini` or `auto` |
+| `--model NAME` | provider default | LLM model |
 | `--max-steps N` | `40` | Maximum LLM turns; at the limit the agent is forced to finish |
 | `--timeout SEC` | `900` | Wall-clock budget for the investigation; at the limit the agent is forced to finish |
 | `--clone-depth N` | `200` | Git history depth fetched (affects `git_log`) |
 | `--trace PATH` / `--no-trace` | `<output>.trace.jsonl` | Tool-call trace (see below) |
 
-**Exit codes:** `0` success · `1` unexpected error · `2` invalid URL/options or missing API key ·
+**Exit codes:** `0` success · `1` unexpected error · `2` invalid URL/options or missing API key for the selected provider ·
 `3` clone failed (not found / not public / network) · `4` LLM failure (auth, quota, timeout after retries).
 On any nonzero exit a one-line `error: ...` message is printed to stderr and no report is written.
 

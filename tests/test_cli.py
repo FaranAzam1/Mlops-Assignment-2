@@ -114,7 +114,8 @@ def test_invalid_url_exits_2_without_writing(tmp_path, capsys):
 
 
 def test_missing_api_key_exits_2_with_hint(monkeypatch, tmp_path, capsys):
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    for var in ("OPENAI_API_KEY", "GEMINI_API_KEY", "LLM_PROVIDER"):
+        monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(agent_cli, "_load_env", lambda: None)
     code = agent_cli.main(["--repo", "https://github.com/o/r", "--output", str(tmp_path / "r.json")])
     assert code == 2 and "OPENAI_API_KEY" in capsys.readouterr().err

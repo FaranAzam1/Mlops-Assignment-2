@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Any, Optional, Protocol, Union
 
 from auditor.repo import EXIT_LLM_FAILED, AuditError
+
+RATE_LIMIT_ATTEMPTS = 6
 
 
 class LLMError(AuditError):
@@ -53,12 +56,24 @@ class OpenAIClient:
         self.model = model
         self._client = openai.OpenAI(api_key=api_key, base_url=base_url or None, timeout=timeout, max_retries=max_retries)
 
+    def _create_with_backoff(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], tool_choice: ToolChoice) -> Any:
+        """Retry rate limits (free tiers hit them often) but fail fast when the quota/credit is exhausted."""
+        openai = self._openai
+        for attempt in range(1, RATE_LIMIT_ATTEMPTS + 1):
+            try:
+                return self._client.chat.completions.create(
+                    model=self.model, messages=messages, tools=tools, tool_choice=tool_choice
+                )
+            except openai.RateLimitError as exc:
+                text = str(exc).lower()
+                if attempt == RATE_LIMIT_ATTEMPTS or any(s in text for s in ("insufficient_quota", "no credits", "billing", "exceeded your current quota")):
+                    raise
+                time.sleep(min(60.0, 5.0 * 2 ** (attempt - 1)))
+
     def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], tool_choice: ToolChoice) -> LLMReply:
         openai = self._openai
         try:
-            resp = self._client.chat.completions.create(
-                model=self.model, messages=messages, tools=tools, tool_choice=tool_choice
-            )
+            resp = self._create_with_backoff(messages, tools, tool_choice)
         except openai.AuthenticationError:
             raise LLMError("OpenAI rejected the API key (authentication failed). Check OPENAI_API_KEY.") from None
         except openai.PermissionDeniedError as exc:
@@ -78,11 +93,15 @@ class OpenAIClient:
         if not resp.choices:
             raise LLMError("OpenAI returned no choices")
         message = resp.choices[0].message
-        calls = [
-            ToolCall(id=tc.id, name=tc.function.name, arguments=tc.function.arguments or "{}")
-            for tc in (message.tool_calls or [])
-            if getattr(tc, "type", "function") == "function"
-        ]
+        self._call_counter = getattr(self, "_call_counter", 0)
+        calls = []
+        for tc in message.tool_calls or []:
+            if getattr(tc, "type", "function") != "function":
+                continue
+            self._call_counter += 1
+            # some OpenAI-compatible providers omit or repeat tool-call ids; ids must be unique per conversation
+            call_id = tc.id if tc.id and not any(c.id == tc.id for c in calls) else f"call_{self._call_counter}_{tc.function.name}"
+            calls.append(ToolCall(id=call_id, name=tc.function.name, arguments=tc.function.arguments or "{}"))
         usage = {}
         if resp.usage:
             usage = {"prompt_tokens": resp.usage.prompt_tokens, "completion_tokens": resp.usage.completion_tokens}
