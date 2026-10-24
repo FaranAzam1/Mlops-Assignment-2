@@ -1,0 +1,35 @@
+{
+  "repository": "https://github.com/realpython/python-scripts",
+  "violations": [
+    {
+      "rule_id": "CI-001",
+      "category": "github_actions_ci",
+      "severity": "medium",
+      "file": null,
+      "line": null,
+      "description": "The repository contains a collection of Python scripts but has no automated testing framework or CI configuration to validate them. While individual scripts might be simple, the lack of any testing or validation mechanism is a significant hygiene issue for a project with this many files.",
+      "evidence": "No test framework (pytest, unittest, etc.) configured, and no .github/workflows directory present. Only a single file with \"test\" in the name, which does not appear to be part of a test suite.",
+      "recommendation": "Add a testing framework and at least basic CI to validate the scripts."
+    },
+    {
+      "rule_id": "TEST-001",
+      "category": "testing",
+      "severity": "high",
+      "file": null,
+      "line": null,
+      "description": "The repository lacks any automated tests for the various Python scripts provided. While many scripts are simple, the absence of any verification for a project with 30+ scripts makes it difficult to maintain or ensure they function correctly.",
+      "evidence": "No test files or test runner configuration (like pytest or unittest) identified. Scripts appear to be standalone utilities with no associated test code.",
+      "recommendation": "Implement unit tests for the scripts, at least for the ones that perform complex logic."
+    },
+    {
+      "rule_id": "SEC-001",
+      "category": "security",
+      "severity": "critical",
+      "file": "scripts/23_flask_session_test.py",
+      "line": 5,
+      "description": "The Flask application script contains a hardcoded secret key, which is a significant security risk if the application were to be deployed. While the other API keys in the repository appear to be placeholders, this key should not be committed to source control.",
+      "evidence": "app.secret_key = '[REDACTED]'",
+      "recommendation": "Use an environment variable for the Flask secret key instead of hardcoding it."
+    }
+  ]
+}

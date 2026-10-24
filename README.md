@@ -122,7 +122,7 @@ auditor/rules.py        Rule catalogue / categories / severities (shared vocabul
 auditor/report.py       Finding validation against the real repo; report schema check; atomic write
 auditor/redact.py       Secret detection + redaction applied to every outbound string
 auditor/repo.py         URL validation, safe shallow clone, cleanup, fatal-error type + exit codes
-tests/                  85 automated tests (tools, redaction, validation, loop, CLI) using a scripted LLM
+tests/                  105 automated tests (tools, redaction, validation, loop, CLI) using a scripted LLM
 ```
 
 ### The loop
@@ -187,7 +187,7 @@ genuine agent behaviour. All text in it is redacted.
 pytest
 ```
 
-The 85 tests need no network or API key: they build throw-away git repositories and drive the real loop with a scripted
+The 105 tests need no network or API key: they build throw-away git repositories and drive the real loop with a scripted
 LLM. They cover every tool (including path-traversal, binary, redaction and unavailable-API cases), the redactor, finding
 validation, the agent loop (dynamic tool selection from earlier results, early-finish rejection, bad tool arguments,
 step/time limits, compaction, trace contents), URL validation, cloning, report schema/atomic write and every CLI exit code.
@@ -204,3 +204,30 @@ python scripts/eval_fixture.py
 * Without `GITHUB_TOKEN` the GitHub API allows ~60 requests/hour per IP; `github_actions` reports `UNAVAILABLE` if it is exceeded.
 * Results depend on the chosen model; detection quality is probabilistic, which is why findings are verified against the repository.
 * Python projects get static lint (`run_ruff`); other languages are inspected through files, search and CI evidence.
+
+## 7. Evaluation
+
+**Fixture evaluation** (`python scripts/eval_fixture.py`, live LLM: Gemini free tier, `gemini-3.1-flash-lite` after the
+primary models hit their daily quota). Three local repositories built at run time: (A) obvious defects, (B) subtler
+CI/security/configuration defects, (C) a healthy repository for false positives.
+
+| Fixture | Expected defects found | Reported | Notes |
+|---|---|---|---|
+| A: obvious | 8 / 8 | 10 | The 2 extras are legitimate (an `http://` request, `DEBUG=true` in a committed `.env`) |
+| B: subtle | 8 / 8 | 9 | The extra is legitimate (a test that only asserts `True`) |
+| C: healthy | n/a | 0 | No false positives |
+
+These fixtures were written by the author alongside the agent, so they are a sanity check, not a benchmark; the real
+hidden-repository results will differ. They were used to tune the prompt (for example: report each missing item
+separately, exact `==` pins are reproducible, manifests conflict only when they actually disagree) without any
+repository-specific logic in the agent.
+
+**Real repository** (`sample_report.json`, `sample_report.trace.jsonl`): `python agent.py --repo
+https://github.com/realpython/python-scripts --output sample_report.json` produced 3 violations in 12 LLM turns / 8
+inspection calls (about 89k prompt and 1k completion tokens). Each was checked by hand against the repository afterwards:
+no CI or tests exist, and `scripts/23_flask_session_test.py:5` hardcodes a Flask secret key. The trace shows the agent
+reading the Twitter scripts, judging their key-looking strings to be placeholders, and not reporting them.
+
+**Free-tier note.** Gemini's free tier allows roughly 20 requests per model per day, so the client retries transient errors,
+honours the provider's retry delay, and falls back through `GEMINI_FALLBACK_MODELS` when a model's quota is exhausted. A
+paid or higher-quota key avoids this and generally improves detection quality.
