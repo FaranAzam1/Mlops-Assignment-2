@@ -1,0 +1,29 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Agent run output (the authentic sample is committed as sample_report.json)
+report.json
+report.trace.jsonl
+*.trace.jsonl
+!sample_report.trace.jsonl
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
